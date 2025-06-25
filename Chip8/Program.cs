@@ -6,13 +6,19 @@ internal class Program
     {
         var cpu = new CPU();
 
-        byte lastOne = 0b1111_0000;
-        lastOne >>= 7;
+        var gamePath = @"C:\Users\narat\Documents\Gameboy Learn\chip8\br8kout.ch8";
+
+        var romBytes = File.ReadAllBytes(gamePath);
+        cpu.LoadRom(romBytes);
 
         int delayMs = 16;
+
         while (true)
         {
-            cpu.Tick();
+            cpu.Cycle();
+
+            //Console.WriteLine($"PC: {cpu.PC}");
+            //Console.WriteLine($"I: {cpu.I}");
 
             Thread.Sleep(delayMs);
         }
