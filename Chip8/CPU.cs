@@ -8,18 +8,15 @@ using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Chip8;
 
-public enum BoolByte : byte
-{
-    False = 0,
-    True = 1
-}
-
 public sealed class CPU
 {
     // Registry
     public ushort I, PC = 0x200;
     // 0 -> 14. 15 it's FlagCarry
     public byte[] V = new byte[16];
+    public byte V0 => V[0];
+    public byte V1 => V[1];
+
     public readonly Stack<ushort> Stack = new();
     public byte FlagF
     {
@@ -40,9 +37,18 @@ public sealed class CPU
     // helper
     public const int K_EntryPointOffset = 0x200;
 
+    // Random
+    public readonly Random rng = new();
+    public byte RandomNextByte() => (byte)rng.Next(256);
+
+    // Keyboard key down sets
+    public readonly HashSet<byte> KeyDownSets = new();
+    public bool IsKeyDown(byte keyHex) => KeyDownSets.Contains(keyHex);
+
     public CPU()
     {
-        // register all opcode
+        #region Register Opcodes
+
         RegisterOpcodeImplement(0x0, (ins) =>
         {
             switch (ins.nn)
@@ -59,15 +65,98 @@ public sealed class CPU
 
         RegisterOpcodeImplement(0x1, Jump);
         RegisterOpcodeImplement(0x2, CallSubroutine);
-
         RegisterOpcodeImplement(0x3, SkipNextIf);
         RegisterOpcodeImplement(0x4, SkipNextIf);
         RegisterOpcodeImplement(0x5, SkipNextIf);
-
         RegisterOpcodeImplement(0x6, SetVX);
         RegisterOpcodeImplement(0x7, AddVX);
-
         RegisterOpcodeImplement(0x8, Arithmetic);
+        RegisterOpcodeImplement(0x9, SkipIfVXNotEqualVY);
+        RegisterOpcodeImplement(0xA, SetIToNNN);
+        RegisterOpcodeImplement(0xB, JumpWithOffset);
+        RegisterOpcodeImplement(0xC, CXNN_Random);
+        RegisterOpcodeImplement(0xD, Draw);
+        RegisterOpcodeImplement(0xE, SkipIfKeyDown);
+        RegisterOpcodeImplement(0xF, HandleOpcodeF);
+
+        #endregion
+    }
+
+    private void HandleOpcodeF(Instruction i)
+    {
+        switch (i.nn)
+        {
+            case 0x1E:
+                AddToIndex(V[i.x]);
+                break;
+            case 0x55:
+                SaveVX(i);
+                break;
+            case 0x65:
+                LoadVX(i);
+                break;
+        }
+    }
+
+    private void LoadVX(Instruction i)
+    {
+        for(int vIndex = 0; vIndex < i.x; vIndex++)
+            V[vIndex] = Ram[I + vIndex];
+    }
+
+    private void SaveVX(Instruction i)
+    {
+        for(int vIndex = 0; vIndex < i.x; vIndex++)
+            Ram[I + vIndex] = V[vIndex];
+    }
+
+    void AddToIndex(byte v)
+    {
+        I += v;
+    }
+
+    private void SkipIfKeyDown(Instruction i)
+    {
+        byte keyHex = V[i.x];
+        bool isKeyDown = IsKeyDown(keyHex);
+        bool skip = i.nn == 0x9E ? isKeyDown : !isKeyDown;
+        if (skip)
+            SkipNextOpcode();
+    }
+
+    private void Draw(Instruction i)
+    {
+        var x = V[i.x];
+        var y = V[i.y];
+
+        // Todo...
+        FlagF = 0;
+        Console.WriteLine($"Draw: x: {x}, y: {y}");
+    }
+
+    private void CXNN_Random(Instruction i)
+    {
+        var randValue = RandomNextByte();
+        V[i.x] = (byte)(randValue & i.nn);
+    }
+
+    private void JumpWithOffset(Instruction i)
+    {
+        PC = (ushort)(V0 + i.nnn);
+    }
+
+    private void SetIToNNN(Instruction i)
+    {
+        I = i.nnn;
+    }
+
+    private void SkipIfVXNotEqualVY(Instruction i)
+    {
+        bool skip = V[i.x] != V[i.y];
+        if (skip)
+        {
+            SkipNextOpcode();
+        }
     }
 
     void Arithmetic(Instruction i)
