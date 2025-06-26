@@ -6,8 +6,8 @@ namespace Chip8WindowsForms
 {
     public partial class MainForm : Form
     {
-        Bitmap screen;
-        PictureBox pictureBox;
+        Bitmap screenBitmap;
+        GamePictureBox screenPictureBox;
 
         readonly CPU cpu = new();
 
@@ -15,26 +15,25 @@ namespace Chip8WindowsForms
         {
             InitializeComponent();
 
-            screen = new(CPU.ScreenWidth, CPU.ScreenHeight);
+            screenBitmap = new(CPU.ScreenWidth, CPU.ScreenHeight);
             int zoomScale = 15;
-            pictureBox = new PictureBox
+            screenPictureBox = new()
             {
-                Width = screen.Width * zoomScale,
-                Height = screen.Height * zoomScale,
+                Width = screenBitmap.Width * zoomScale,
+                Height = screenBitmap.Height * zoomScale,
                 BorderStyle = BorderStyle.FixedSingle,
-                Image = screen,
-
+                Image = screenBitmap,
                 SizeMode = PictureBoxSizeMode.Zoom,
             };
-            this.Controls.Add(pictureBox);
-            ClientSize = new(pictureBox.Width, pictureBox.Height);
+            this.Controls.Add(screenPictureBox);
+            ClientSize = new(screenPictureBox.Width, screenPictureBox.Height);
 
             KeyPreview = true;
             KeyDown += Form_KeyDown;
             KeyUp += Form_KeyUp;
 
             // ready
-            Task.Run(MainLoop);
+            Task.Run(StartGameThread);
         }
 
         void SetKeyState(Keys key, bool isKeyDown)
@@ -111,12 +110,14 @@ namespace Chip8WindowsForms
             SetKeyState(e.KeyCode, true);
         }
 
-        private unsafe void MainLoop()
+        private unsafe void StartGameThread()
         {
             Console.WriteLine("start main loop");
 
-            bool romLoaded = cpu.LoadRom(
-                @"C:\Users\narat\Documents\Gameboy Learn\chip8\br8kout.ch8");
+            var romDir = @"C:\Users\narat\Documents\Gameboy Learn\chip8\Roms";
+            var romFileName = "test_opcode.ch8";
+            //var romFileName = "br8kout.ch8";
+            bool romLoaded = cpu.LoadRom(Path.Combine(romDir, romFileName));
 
             if (romLoaded is false)
                 return;
@@ -134,17 +135,13 @@ namespace Chip8WindowsForms
                 cpu.Cycle();
 
                 // tick60hz
-                var tickAcc = tick60HZTimer.Elapsed.TotalMicroseconds;
-                if (tickAcc >= Tick60HZMs)
+                var timerMs = tick60HZTimer.Elapsed.TotalMilliseconds;
+                if (timerMs >= Tick60HZMs)
                 {
-                    if (cpu.DelayTime > 0)
-                        cpu.DelayTime--;
-                    //Console.WriteLine("tick acc: " + tickAcc);
+                    cpu.OnTick60HZ();
                     Render();
-
                     tick60HZTimer.Restart();
                 }
-
             }
         }
 
@@ -154,10 +151,10 @@ namespace Chip8WindowsForms
                 return;
 
             cpu.DisplayNeedRedraw = false;
-            pictureBox.Invoke(() =>
+            screenPictureBox.Invoke(() =>
               {
-                  var bits = screen.LockBits(
-                      new Rectangle(0, 0, screen.Width, screen.Height),
+                  var bits = screenBitmap.LockBits(
+                      new Rectangle(0, 0, screenBitmap.Width, screenBitmap.Height),
                       ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
 
                   var display = cpu.Display;
@@ -165,9 +162,9 @@ namespace Chip8WindowsForms
                   {
                       byte* pixels = (byte*)bits.Scan0;
 
-                      for (var y = 0; y < screen.Height; y++)
+                      for (var y = 0; y < screenBitmap.Height; y++)
                       {
-                          for (var x = 0; x < screen.Width; x++)
+                          for (var x = 0; x < screenBitmap.Width; x++)
                           {
                               pixels[0] = 0; // Blue
                               pixels[1] = display[x, y] ? (byte)0x64 : (byte)0; // Green
@@ -178,11 +175,10 @@ namespace Chip8WindowsForms
                       }
                   }
 
-                  screen.UnlockBits(bits);
+                  screenBitmap.UnlockBits(bits);
 
-                  pictureBox.Refresh();
+                  screenPictureBox.Refresh();
               });
-
         }
 
         private void MainForm_Load(object sender, EventArgs e)
