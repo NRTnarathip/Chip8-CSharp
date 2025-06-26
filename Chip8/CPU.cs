@@ -46,6 +46,7 @@ public sealed class CPU
         get => V[0xF];
         set => V[0xF] = value;
     }
+    public void SetFlagCarry(byte val) => FlagCarry = val;
     public void SetFlagCarry(bool val) => FlagCarry = val ? (byte)1 : (byte)0;
     public void SetFlagCarry(int val) => FlagCarry = (byte)val;
 
@@ -299,7 +300,8 @@ public sealed class CPU
 
     void Arithmetic(Instruction i)
     {
-        byte x = V[i.x];
+        // cache init
+        ref byte x = ref V[i.x];
         byte y = V[i.y];
 
         switch (i.n)
@@ -321,30 +323,29 @@ public sealed class CPU
                 SetFlagCarry(x + y >= 0xFF);
                 x += y;
                 break;
-            case 0x5: // 8XY5 Sub Vx, Vy
+            case 0x5: // 8XY5 Sub
                 // underflow?
                 SetFlagCarry(x > y);
                 x -= y;
                 break;
             case 0x6: // 8XY6 Shift right
-                SetFlagCarry((x & 0x1) != 0);
+                //  save sign at last bit 
+                FlagCarry = (byte)(x & 0x1);
                 x >>= 1;
                 break;
-            case 0x7: // 8XY7 SubN Vx, Vy
+            case 0x7: // 8XY7 SubN
                 // underflow?
-                SetFlagCarry(y > x);
-                y -= x;
+                SetFlagCarry(y > x ? 1 : 0);
+                x = (byte)(y - x);
                 break;
             case 0xE: // 8XYE Shift left
-                SetFlagCarry((x & 0xF) != 0);
+                // Save MSB in VF
+                SetFlagCarry(x >> 7); // left first 1 bit
                 x <<= 1;
                 break;
             default:
                 throw new NotImplementedException("not implement opcode: " + i);
         }
-
-        V[i.x] = x;
-        V[i.y] = y;
     }
 
     void SetVX_6XNN(Instruction i)
@@ -427,7 +428,7 @@ public sealed class CPU
         {
             try
             {
-                Console.WriteLine("execute opcode: " + lastInstruction);
+                //Console.WriteLine("execute opcode: " + lastInstruction);
                 exeCallback(lastInstruction);
             }
             catch (Exception ex)
@@ -445,8 +446,6 @@ public sealed class CPU
 
     public void OnTick60HZ()
     {
-        Cycle();
-
         if (DelayTime > 0)
             DelayTime--;
     }

@@ -1,5 +1,6 @@
 using Chip8;
 using System.Drawing.Imaging;
+using System.Reflection;
 using System.Windows.Forms;
 
 namespace Chip8WindowsForms
@@ -42,14 +43,23 @@ namespace Chip8WindowsForms
 
         void InitGame()
         {
-            var romDir = @"C:\Users\narat\Documents\Gameboy Learn\chip8\Roms";
-            //var romFileName = "test_opcode.ch8";
-            //var romFileName = "br8kout.ch8";
-            var romFileName = "2-ibm-logo.ch8";
-            bool romLoaded = cpu.LoadRom(Path.Combine(romDir, romFileName));
+            var exePath = Assembly.GetExecutingAssembly().Location;
+            var currentDir = Path.GetDirectoryName(exePath);
 
-            if (romLoaded is false)
+
+            // Test Suit
+#if true
+            var testSuitProjDir = Path.GetFullPath(
+                Path.Combine(currentDir, "..\\..\\..\\..", "chip8-test-suite"));
+            var romCoraxPlusFilePath = Path.Combine(testSuitProjDir, "bin", "3-corax+.ch8");
+            if (cpu.LoadRom(romCoraxPlusFilePath))
                 return;
+#endif
+
+
+            // your game
+            var gamePath = @"";
+            cpu.LoadRom(gamePath);
         }
 
         void SetKeyState(Keys key, bool isKeyDown)
@@ -139,22 +149,26 @@ namespace Chip8WindowsForms
 
             while (true)
             {
-                // tick60hz
+                bool isTicked60HZ = false;
                 var timerMs = tick60HZTimer.Elapsed.TotalMilliseconds;
                 if (timerMs >= Tick60HZMs)
                 {
                     tick60HZTimer.Restart();
+                    isTicked60HZ = true;
+                }
 
-                    // main thread
-                    this.Invoke(() =>
+                // main thread
+                this.Invoke(() =>
+                {
+                    cpu.Cycle();
+
+                    // render 60 frame per seconds
+                    if (isTicked60HZ)
                     {
                         cpu.OnTick60HZ();
                         Render();
-
-                        // save to png
-                        //screenBitmap.Save("screen.png", ImageFormat.Png);
-                    });
-                }
+                    }
+                });
             }
         }
 
