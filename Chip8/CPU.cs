@@ -37,59 +37,42 @@ public sealed class CPU
     public readonly byte[] Ram = new byte[K_MaxRam];
 
     // helper
-    public const int K_EntryPointAddress = 0x200;
 
     // Random
     public readonly Random rng = new();
     public byte RandomNextByte() => (byte)rng.Next(256);
 
     // Keyboard key down sets
-    readonly object _keyLock = new();
     readonly HashSet<byte> KeyDownSets = new();
     public byte GetLastKey()
     {
-        lock (_keyLock)
-        {
-            if (KeyDownSets.Count > 0)
-                return KeyDownSets.Last();
-            return 0xFF;
-        }
+        if (KeyDownSets.Count > 0)
+            return KeyDownSets.Last();
+        return 0xFF;
     }
     public bool UpdateKeyState(byte keyHex, bool isKeyDown)
     {
         if (isKeyDown)
         {
-            lock (_keyLock)
+            if (IsKeyDown(keyHex) is false)
             {
-                if (IsKeyDown(keyHex) is false)
-                {
-                    KeyDownSets.Add(keyHex);
-                    return true;
-                }
+                KeyDownSets.Add(keyHex);
+                return true;
             }
         }
         else
         {
-            lock (_keyLock)
+            if (IsKeyDown(keyHex))
             {
-                if (IsKeyDown(keyHex))
-                {
-                    KeyDownSets.Remove(keyHex);
-                    return true;
-                }
+                KeyDownSets.Remove(keyHex);
+                return true;
             }
         }
 
         return false;
     }
 
-    public bool IsKeyDown(byte keyHex)
-    {
-        bool down;
-        lock (_keyLock)
-            down = KeyDownSets.Contains(keyHex);
-        return down;
-    }
+    public bool IsKeyDown(byte keyHex) => KeyDownSets.Contains(keyHex);
 
     public CPU()
     {
@@ -97,6 +80,7 @@ public sealed class CPU
 
         RegisterOpcodeImplement(0x0, (ins) =>
         {
+            Console.WriteLine("exeucute : " + ins);
             switch (ins.nn)
             {
                 // clear screen
@@ -106,15 +90,16 @@ public sealed class CPU
                 case 0xEE:
                     ReturnFromSubroutine_00EE();
                     break;
+
                 default:
                     throw new NotImplementedException();
             }
         });
         RegisterOpcodeImplement(0x1, Jump_1NNN);
         RegisterOpcodeImplement(0x2, CallSubroutine_2NNN);
-        RegisterOpcodeImplement(0x3, SkipIf);
-        RegisterOpcodeImplement(0x4, SkipIf);
-        RegisterOpcodeImplement(0x5, SkipIf);
+        RegisterOpcodeImplement(0x3, SkipIfXEqualNN);
+        RegisterOpcodeImplement(0x4, SkipIfXNotEqualNN);
+        RegisterOpcodeImplement(0x5, SkipIfXEqualY);
         RegisterOpcodeImplement(0x6, SetVX);
         RegisterOpcodeImplement(0x7, AddVX);
         RegisterOpcodeImplement(0x8, Arithmetic);
@@ -130,12 +115,30 @@ public sealed class CPU
 
     }
 
+    void SkipIfXNotEqualNN(Instruction i)
+    {
+        if (V[i.x] != i.nn)
+            MoveNextOpcode();
+    }
+
+    private void SkipIfXEqualY(Instruction i)
+    {
+        if (V[i.x] == V[i.y])
+            MoveNextOpcode();
+    }
+
+    private void SkipIfXEqualNN(Instruction i)
+    {
+        if (V[i.x] == i.nn)
+            MoveNextOpcode();
+    }
+
     private void HandleOpcodeF(Instruction i)
     {
         switch (i.nn)
         {
             case 0x07:
-                DelayTime = V[i.x];
+                V[i.x] = DelayTime;
                 break;
             case 0x0A: // Wait for key
                 var firstKey = GetLastKey();
@@ -151,32 +154,30 @@ public sealed class CPU
 
                 break;
             case 0x15:
-                V[i.x] = DelayTime;
+                DelayTime = V[i.x];
                 break;
-            //case 0x18:
-            //    // sound 
-            //    break;
             case 0x1E:
                 I += V[i.x];
                 break;
-            case 0x29:
-                I = (ushort)(V[i.x] * 5); // 0 is at 0x0, 1 is at 0x5, ...
+            case 0x29: // read font
+                Console.WriteLine("set I to char: " + i.x.ToString("X"));
+                I = (ushort)(V[i.x] * 5);
                 break;
             case 0x33: // Binary-coded decimal
-                Ram[I + 0] = (byte)((V[i.x] / 100) % 10);
-                Ram[I + 1] = (byte)((V[i.x] / 10) % 10);
-                Ram[I + 2] = (byte)(V[i.x] % 10);
+                var x = V[i.x];
+                Ram[I + 0] = (byte)((x / 100) % 10);
+                Ram[I + 1] = (byte)((x / 10) % 10);
+                Ram[I + 2] = (byte)(x % 10);
                 break;
             case 0x55:
                 // set VX to I
                 for (var index = 0; index <= i.x; index++)
                     Ram[I + index] = V[index];
-
                 break;
             case 0x65:
+                // set I to VX
                 for (var index = 0; index <= i.x; index++)
                     V[index] = Ram[I + index];
-                // set I to VX
                 break;
 
             default:
@@ -261,7 +262,7 @@ public sealed class CPU
 
     private void BNNN_JumpWithOffset(Instruction i)
     {
-        Jump(V0 + i.nnn);
+        Jump(i.nnn + V0);
     }
 
     private void Jump(int addr) => PC = (ushort)addr;
@@ -337,29 +338,6 @@ public sealed class CPU
         V[i.x] += i.nn;
     }
 
-    private void SkipIf(Instruction i)
-    {
-        byte x = V[i.x];
-
-        // skip next opcode,
-        switch (i.firstN)
-        {
-            case 0x3: // skip if VX == NN
-                if (x == i.nn)
-                    MoveNextOpcode();
-                break;
-            case 0x4: // skip if VX != NN
-                if (x != i.nn)
-                    MoveNextOpcode();
-                break;
-            case 0x5: // skip if VX == VY
-                if (x == V[i.y])
-                    MoveNextOpcode();
-                break;
-            default:
-                throw new NotImplementedException();
-        }
-    }
 
     void RegisterOpcodeImplement(byte prefixOpcode, Action<Instruction> callback)
     {
@@ -387,6 +365,7 @@ public sealed class CPU
 
     private void ClearScreen()
     {
+        Console.WriteLine("Clear screen");
         for (var x = 0; x < ScreenWidth; x++)
             for (var y = 0; y < ScreenHeight; y++)
                 Display[x, y] = false;
@@ -410,30 +389,35 @@ public sealed class CPU
 
     public void LoadRom(byte[] bytes)
     {
-        // load rom, etc..
         // load rom
+        const int K_EntryPointAddress = 0x200;
         Array.Copy(bytes, 0, Ram, K_EntryPointAddress, bytes.Length);
+
+        // load fonts
         LoadFont(FontSets.FontDefault);
 
-        // setup
+        // setup register
         PC = K_EntryPointAddress;
         I = 0;
         DelayTime = 0;
     }
+
     public void LoadFont(byte[] fonts)
     {
         // load fonts
-        if (fonts.Length >= 0x80)
+        const int K_FontSize = 0x50;
+        if (fonts.Length != K_FontSize)
         {
-            Console.WriteLine("Error: font bytes is more than 0x50");
+            Console.WriteLine("Error: fonts length is not " + K_FontSize.ToString("X"));
             return;
         }
 
-        const int K_LoadFontStartAddress = 0x50;
+        const int K_LoadFontStartAddress = 0x0;
         Array.Copy(fonts, 0, Ram, K_LoadFontStartAddress, fonts.Length);
+        Console.WriteLine("loaded fonts");
     }
 
-    public Instruction? currentInstruction;
+    public Instruction? lastInstruction;
     public void Cycle()
     {
         var currentOpcode = ReadOpcode();
@@ -447,35 +431,37 @@ public sealed class CPU
             return;
         }
 
-        var prevOpcodeString = currentInstruction?.ToString();
-        currentInstruction = new Instruction(currentOpcode);
-        if (currentInstruction.ToString() == prevOpcodeString)
+        var prevOpcodeString = lastInstruction?.ToString();
+        lastInstruction = new Instruction(currentOpcode);
+        if (lastInstruction.ToString() == prevOpcodeString)
         {
             //Console.WriteLine("freezing opcode...: " + currentInstruction);
         }
 
-        if (OpcodeExecuteMap.TryGetValue(currentInstruction.firstN, out var exeCallback))
+        if (OpcodeExecuteMap.TryGetValue(lastInstruction.firstN, out var exeCallback))
         {
             try
             {
                 //Console.WriteLine("execute opcode: " + currentInstruction);
-                exeCallback(currentInstruction);
+                exeCallback(lastInstruction);
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Error: try execute opcode: " + currentInstruction);
+                Console.WriteLine("Error: try execute opcode: " + lastInstruction);
                 Console.WriteLine(ex);
             }
         }
         else
         {
             MoveBackOpcode();
-            Console.WriteLine("not found opcode: " + currentInstruction);
+            Console.WriteLine("not found implement for opcode: " + lastInstruction);
         }
     }
 
     public void OnTick60HZ()
     {
+        Cycle();
+
         if (DelayTime > 0)
             DelayTime--;
     }
@@ -495,8 +481,11 @@ public sealed class CPU
         return (ushort)(b1 << 8 | b2);
     }
 
+    public bool lastRomLoaded = false;
     public bool LoadRom(string path)
     {
+        lastRomLoaded = false;
+
         if (File.Exists(path) is false)
         {
             Console.WriteLine("not found rom at path: " + path);
@@ -505,6 +494,8 @@ public sealed class CPU
 
         var bytes = File.ReadAllBytes(path);
         LoadRom(bytes);
+
+        lastRomLoaded = true;
 
         return true;
     }

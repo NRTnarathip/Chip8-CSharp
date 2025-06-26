@@ -20,7 +20,6 @@ namespace Chip8WindowsForms
             Rectangle dest = new Rectangle(0, 0, Width, Height);
             Rectangle src = new Rectangle(0, 0, Image.Width, Image.Height);
             g.DrawImage(Image, dest, src, GraphicsUnit.Pixel);
-
         }
     }
 }

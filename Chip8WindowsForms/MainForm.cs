@@ -32,8 +32,24 @@ namespace Chip8WindowsForms
             KeyDown += Form_KeyDown;
             KeyUp += Form_KeyUp;
 
-            // ready
-            Task.Run(StartGameThread);
+            InitGame();
+        }
+
+        protected override void OnLoad(EventArgs e)
+        {
+            if (cpu.lastRomLoaded)
+                Task.Run(StartGameLoopThread);
+        }
+
+        void InitGame()
+        {
+            var romDir = @"C:\Users\narat\Documents\Gameboy Learn\chip8\Roms";
+            var romFileName = "test_opcode.ch8";
+            //var romFileName = "br8kout.ch8";
+            bool romLoaded = cpu.LoadRom(Path.Combine(romDir, romFileName));
+
+            if (romLoaded is false)
+                return;
         }
 
         void SetKeyState(Keys key, bool isKeyDown)
@@ -110,18 +126,9 @@ namespace Chip8WindowsForms
             SetKeyState(e.KeyCode, true);
         }
 
-        private unsafe void StartGameThread()
+        private void StartGameLoopThread()
         {
             Console.WriteLine("start main loop");
-
-            var romDir = @"C:\Users\narat\Documents\Gameboy Learn\chip8\Roms";
-            var romFileName = "test_opcode.ch8";
-            //var romFileName = "br8kout.ch8";
-            bool romLoaded = cpu.LoadRom(Path.Combine(romDir, romFileName));
-
-            if (romLoaded is false)
-                return;
-
             var tick60HZTimer = new System.Diagnostics.Stopwatch();
             tick60HZTimer.Restart();
 
@@ -132,15 +139,21 @@ namespace Chip8WindowsForms
 
             while (true)
             {
-                cpu.Cycle();
-
                 // tick60hz
                 var timerMs = tick60HZTimer.Elapsed.TotalMilliseconds;
                 if (timerMs >= Tick60HZMs)
                 {
-                    cpu.OnTick60HZ();
-                    Render();
                     tick60HZTimer.Restart();
+
+                    // main thread
+                    this.Invoke(() =>
+                    {
+                        cpu.OnTick60HZ();
+                        Render();
+
+                        // save to png
+                        //screenBitmap.Save("screen.png", ImageFormat.Png);
+                    });
                 }
             }
         }
@@ -151,34 +164,33 @@ namespace Chip8WindowsForms
                 return;
 
             cpu.DisplayNeedRedraw = false;
-            screenPictureBox.Invoke(() =>
-              {
-                  var bits = screenBitmap.LockBits(
-                      new Rectangle(0, 0, screenBitmap.Width, screenBitmap.Height),
-                      ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
 
-                  var display = cpu.Display;
-                  unsafe
-                  {
-                      byte* pixels = (byte*)bits.Scan0;
+            Console.WriteLine("render");
+            var bits = screenBitmap.LockBits(
+                new Rectangle(0, 0, screenBitmap.Width, screenBitmap.Height),
+                ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
 
-                      for (var y = 0; y < screenBitmap.Height; y++)
-                      {
-                          for (var x = 0; x < screenBitmap.Width; x++)
-                          {
-                              pixels[0] = 0; // Blue
-                              pixels[1] = display[x, y] ? (byte)0x64 : (byte)0; // Green
-                              pixels[2] = 0; // Red
-                              pixels[3] = 255; // Alpha
-                              pixels += 4; // 4 bytes per pixel
-                          }
-                      }
-                  }
+            unsafe
+            {
+                byte* pointer = (byte*)bits.Scan0;
 
-                  screenBitmap.UnlockBits(bits);
+                for (var y = 0; y < screenBitmap.Height; y++)
+                {
+                    for (var x = 0; x < screenBitmap.Width; x++)
+                    {
+                        pointer[0] = 0; // Blue
+                        pointer[1] = cpu.Display[x, y] ? (byte)0x64 : (byte)0; // Green
+                        pointer[2] = 0; // Red
+                        pointer[3] = 255; // Alpha
 
-                  screenPictureBox.Refresh();
-              });
+                        pointer += 4; // 4 bytes per pixel
+                    }
+                }
+            }
+
+            screenBitmap.UnlockBits(bits);
+
+            screenPictureBox.Refresh();
         }
 
         private void MainForm_Load(object sender, EventArgs e)
