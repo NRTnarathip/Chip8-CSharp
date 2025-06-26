@@ -1,25 +1,25 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows.Forms;
 
 namespace Chip8WindowsForms
 {
     public sealed class GamePictureBox : PictureBox
     {
+        public InterpolationMode interpolationMode { get; set; } = InterpolationMode.NearestNeighbor;
+
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
 
-            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
-            g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half; // ขอบคม
+            g.PixelOffsetMode = PixelOffsetMode.Half;
+            g.InterpolationMode = interpolationMode;
 
-            g.Clear(BackColor);
-
-            Rectangle dest = new Rectangle(0, 0, Width, Height);
-            Rectangle src = new Rectangle(0, 0, Image.Width, Image.Height);
-            g.DrawImage(Image, dest, src, GraphicsUnit.Pixel);
+            base.OnPaint(e);
         }
     }
 }

@@ -6,7 +6,7 @@ namespace Chip8WindowsForms
 {
     public partial class MainForm : Form
     {
-        Bitmap screenBitmap;
+        readonly Bitmap screenBitmap = new(CPU.ScreenWidth, CPU.ScreenHeight);
         GamePictureBox screenPictureBox;
 
         readonly CPU cpu = new();
@@ -15,7 +15,6 @@ namespace Chip8WindowsForms
         {
             InitializeComponent();
 
-            screenBitmap = new(CPU.ScreenWidth, CPU.ScreenHeight);
             int zoomScale = 15;
             screenPictureBox = new()
             {
@@ -44,8 +43,9 @@ namespace Chip8WindowsForms
         void InitGame()
         {
             var romDir = @"C:\Users\narat\Documents\Gameboy Learn\chip8\Roms";
-            var romFileName = "test_opcode.ch8";
+            //var romFileName = "test_opcode.ch8";
             //var romFileName = "br8kout.ch8";
+            var romFileName = "2-ibm-logo.ch8";
             bool romLoaded = cpu.LoadRom(Path.Combine(romDir, romFileName));
 
             if (romLoaded is false)
@@ -165,7 +165,6 @@ namespace Chip8WindowsForms
 
             cpu.DisplayNeedRedraw = false;
 
-            Console.WriteLine("render");
             var bits = screenBitmap.LockBits(
                 new Rectangle(0, 0, screenBitmap.Width, screenBitmap.Height),
                 ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);

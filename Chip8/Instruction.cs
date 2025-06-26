@@ -19,7 +19,7 @@ public sealed class Instruction
         x = (byte)((opcode & 0x0F00) >> 8);
         y = (byte)((opcode & 0x00F0) >> 4);
 
-        opcodeString = "0x" + opcode.ToString("X");
+        opcodeString = "0x" + opcode.ToString("X4");
     }
     public override string ToString() => opcodeString;
 }
